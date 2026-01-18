@@ -7,6 +7,8 @@ from north_mcp_python_sdk import NorthMCPServer
 from mcp_tools import cpu_metrics, memory_metrics, network_metrics
 import subprocess
 import psutil
+import signal
+import atexit
 
 
 _default_port = 3001
@@ -275,6 +277,69 @@ def get_system_capacity() -> dict:
         "reasoning": reasoning
     }
 
+# Store process references globally or in a class
+running_processes = {}
+
+@mcp.tool()
+def app_deploy():
+    """Deploy the application stack"""
+    try:
+        # Start server first
+        server = subprocess.Popen(
+            ["python", "demo/server.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        running_processes['server'] = server
+        time.sleep(2)  # Give server time to start
+        
+        # Start proxy
+        proxy = subprocess.Popen(
+            ["python", "demo/proxy.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        running_processes['proxy'] = proxy
+        time.sleep(1)
+        
+        # Start app
+        app = subprocess.Popen(
+            ["uv", "run", "demo/dummy_app.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        running_processes['app'] = app
+        
+        # Verify all are running
+        for name, proc in running_processes.items():
+            if proc.poll() is not None:
+                raise RuntimeError(f"{name} failed to start")
+        
+        return "Deployment successful: server, proxy, and app are running"
+    
+    except Exception as e:
+        # Cleanup on failure
+        app_shutdown()
+        return f"Deployment failed: {str(e)}"
+
+@mcp.tool()
+def app_shutdown():
+    """Stop all running processes"""
+    for name, proc in running_processes.items():
+        if proc.poll() is None:  # Still running
+            proc.terminate()
+            proc.wait(timeout=5)
+    running_processes.clear()
+    return "All processes stopped"
+
+@mcp.tool()
+def app_bandwidth() -> dict:
+    metrics = network_metrics.app_bandwidth_metrics()
+    return {"app_bandwidth": metrics}
+
+
+# Ensure cleanup on exit
+atexit.register(app_shutdown)
 
 # ============================================================================
 # START SERVER
