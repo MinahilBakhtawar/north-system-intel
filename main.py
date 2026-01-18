@@ -319,7 +319,7 @@ def app_deploy():
             stderr=subprocess.PIPE
         )
         running_processes['proxy'] = proxy
-        time.sleep(1)
+        time.sleep(4)
         
         # Start app
         app = subprocess.Popen(
