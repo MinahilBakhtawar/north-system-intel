@@ -9,6 +9,7 @@ import subprocess
 import psutil
 import signal
 import atexit
+import time
 
 
 _default_port = 3001
@@ -17,6 +18,9 @@ mcp = NorthMCPServer("System Intelligence Monitor", host="0.0.0.0", port=_defaul
 
 # Track running workload process globally
 _workload_process = None
+
+# Store process references globally
+running_processes = {}
 
 
 # ============================================================================
@@ -83,6 +87,19 @@ def start_workload(
         Status and process information
     """
     global _workload_process
+    
+    # Validate parameters
+    if matrix_size <= 0 or iterations <= 0 or parallel_tasks <= 0 or batch_size <= 0:
+        return {
+            "success": False,
+            "error": "All parameters must be positive integers"
+        }
+    
+    if matrix_size > 5000 or iterations > 1000 or parallel_tasks > 16 or batch_size > 100:
+        return {
+            "success": False,
+            "error": "Parameters exceed safe limits (matrix_size<=5000, iterations<=1000, parallel_tasks<=16, batch_size<=100)"
+        }
     
     # Check if workload already running
     if _workload_process and _workload_process.poll() is None:
@@ -185,15 +202,17 @@ def workload_status() -> dict:
             "message": "No workload has been started yet"
         }
     
+    # Store PID before checking if running to avoid race condition
+    pid = _workload_process.pid
     is_running = _workload_process.poll() is None
     
     if is_running:
         try:
             # Get process info
-            proc = psutil.Process(_workload_process.pid)
+            proc = psutil.Process(pid)
             return {
                 "running": True,
-                "pid": _workload_process.pid,
+                "pid": pid,
                 "cpu_percent": proc.cpu_percent(interval=0.1),
                 "memory_mb": round(proc.memory_info().rss / (1024 * 1024), 2),
                 "status": proc.status()
@@ -277,12 +296,12 @@ def get_system_capacity() -> dict:
         "reasoning": reasoning
     }
 
-# Store process references globally or in a class
-running_processes = {}
 
 @mcp.tool()
 def app_deploy():
     """Deploy the application stack"""
+    global running_processes
+    
     try:
         # Start server first
         server = subprocess.Popen(
@@ -304,7 +323,7 @@ def app_deploy():
         
         # Start app
         app = subprocess.Popen(
-            ["uv", "run", "demo/dummy_app.py"],
+            ["python", "demo/dummy_app.py"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
@@ -322,24 +341,55 @@ def app_deploy():
         app_shutdown()
         return f"Deployment failed: {str(e)}"
 
+
 @mcp.tool()
 def app_shutdown():
     """Stop all running processes"""
+    global running_processes
+    
     for name, proc in running_processes.items():
         if proc.poll() is None:  # Still running
             proc.terminate()
-            proc.wait(timeout=5)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
     running_processes.clear()
     return "All processes stopped"
 
+
 @mcp.tool()
 def app_bandwidth() -> dict:
+    """Get bandwidth metrics for the application"""
     metrics = network_metrics.app_bandwidth_metrics()
     return {"app_bandwidth": metrics}
 
 
+# ============================================================================
+# CLEANUP FUNCTIONS
+# ============================================================================
+
+def cleanup_all():
+    """Cleanup all processes on exit"""
+    global _workload_process
+    
+    # Shutdown app processes
+    app_shutdown()
+    
+    # Shutdown workload process
+    if _workload_process and _workload_process.poll() is None:
+        _workload_process.terminate()
+        try:
+            _workload_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _workload_process.kill()
+            _workload_process.wait()
+
+
 # Ensure cleanup on exit
-atexit.register(app_shutdown)
+atexit.register(cleanup_all)
+
 
 # ============================================================================
 # START SERVER
