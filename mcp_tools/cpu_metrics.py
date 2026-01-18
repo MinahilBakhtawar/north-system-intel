@@ -2,7 +2,7 @@ import psutil
 
 def cpu_metrics():
     total_percent = psutil.cpu_percent(interval=1)
-    per_core = psutil.cpu_percent(intervals=1, percpu=True)
+    per_core = psutil.cpu_percent(interval=1, percpu=True)
     num_cores = psutil.cpu_count(logical=True)
     # maybe load avg or othe important info
     metrics = {"total percent": total_percent, 
