@@ -1,0 +1,12 @@
+[project]
+name = "north-intel"
+version = "0.1.0"
+description = "MCP toolkit for OS insights and error diagnostics"
+authors = [{ name = "" }]
+license = { text = "MIT" }
+requires-python = ">=3.11"
+
+dependencies = [
+    "httpx>=0.28.1",
+    "north-mcp-python-sdk @ git+https://github.com/cohere-ai/north-mcp-python-sdk.git@main",
+]

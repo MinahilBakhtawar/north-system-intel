@@ -1,5 +1,5 @@
 from north_mcp_python_sdk import NorthMCPServer
-from mcp_tools import cpu_metrics
+from mcp_tools import cpu_metrics, network_metrics
 
 _default_port = 3001
 
@@ -14,6 +14,13 @@ def cpu_status() -> dict:
         "top_processes": top_procs
     }
 
+@mcp.tool()
+def network_status() -> dict:
+    metrics = network_metrics.bandwidth_metrics()
+    return {
+        "network_metrics": metrics,
+    }
     
+
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")
