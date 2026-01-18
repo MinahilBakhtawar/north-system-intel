@@ -1,5 +1,7 @@
 import psutil
 import time
+from multiprocessing import shared_memory
+import struct
 
 def bandwidth_metrics(interval: float = 1.0):
     before = psutil.net_io_counters()
@@ -41,3 +43,23 @@ def bandwidth_by_interface(interval: float = 1.0):
         }
 
     return result
+
+"""
+Toolkit-owned proxy monitor
+"""
+
+STRUCT = struct.Struct("QQQQ")
+
+def app_bandwidth_metrics(interval: float = 1.0, name="proxy_counters"):
+    shm = shared_memory.SharedMemory(name=name)
+
+    before = STRUCT.unpack(shm.buf[:])
+    time.sleep(interval)
+    after = STRUCT.unpack(shm.buf[:])
+
+    return {
+        "bytes_sent_per_sec": (after[0] - before[0]) / interval,
+        "bytes_recv_per_sec": (after[1] - before[1]) / interval,
+        "packets_sent_per_sec": (after[2] - before[2]) / interval,
+        "packets_recv_per_sec": (after[3] - before[3]) / interval,
+    }
